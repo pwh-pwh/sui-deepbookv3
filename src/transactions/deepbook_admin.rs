@@ -5,12 +5,13 @@ use sui_sdk::{
     types::{
         base_types::{ObjectID, SuiAddress},
         programmable_transaction_builder::ProgrammableTransactionBuilder,
-        Identifier, TypeTag,SUI_CLOCK_OBJECT_ID
+        Identifier, TypeTag, SUI_CLOCK_OBJECT_ID,
     },
     SuiClient,
 };
 
 use crate::utils::config::{DeepBookConfig, FLOAT_SCALAR};
+use crate::utils::types::SetEwmaParamsParams;
 
 use crate::DataReader;
 
@@ -404,6 +405,118 @@ impl DeepBookAdminContract {
             ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
             Identifier::new("pool")?,
             Identifier::new("adjust_min_lot_size_admin")?,
+            vec![base_coin_tag, quote_coin_tag],
+            arguments,
+        );
+
+        Ok(())
+    }
+
+    /// Initialize the balance manager map
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    pub async fn init_balance_manager_map(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+    ) -> Result<()> {
+        let registry_id = ObjectID::from_hex_literal(self.config.registry_id())?;
+        let admin_cap = ObjectID::from_hex_literal(&self.admin_cap()?)?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(registry_id).await?)?,
+            ptb.obj(self.client.share_object(admin_cap).await?)?,
+        ];
+
+        ptb.programmable_move_call(
+            ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
+            Identifier::new("registry")?,
+            Identifier::new("init_balance_manager_map")?,
+            vec![],
+            arguments,
+        );
+
+        Ok(())
+    }
+
+    /// Set EWMA parameters for a pool
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param pool_key - The key to identify the pool
+    /// @param params - The parameters to set
+    pub async fn set_ewma_params(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        pool_key: &str,
+        params: SetEwmaParamsParams,
+    ) -> Result<()> {
+        let pool = self.config.get_pool(pool_key)?;
+        let base_coin = self.config.get_coin(&pool.base_coin)?;
+        let quote_coin = self.config.get_coin(&pool.quote_coin)?;
+
+        let adjusted_alpha = (params.alpha * FLOAT_SCALAR as f64).round() as u64;
+        let adjusted_z_score_threshold =
+            (params.z_score_threshold * FLOAT_SCALAR as f64).round() as u64;
+        let adjusted_additional_taker_fee =
+            (params.additional_taker_fee * FLOAT_SCALAR as f64).round() as u64;
+
+        let base_coin_tag = TypeTag::from_str(&base_coin.type_name)?;
+        let quote_coin_tag = TypeTag::from_str(&quote_coin.type_name)?;
+
+        let pool_id = ObjectID::from_hex_literal(&pool.address)?;
+        let admin_cap = ObjectID::from_hex_literal(&self.admin_cap()?)?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(pool_id).await?)?,
+            ptb.obj(self.client.share_object(admin_cap).await?)?,
+            ptb.pure(adjusted_alpha)?,
+            ptb.pure(adjusted_z_score_threshold)?,
+            ptb.pure(adjusted_additional_taker_fee)?,
+            ptb.obj(self.client.share_object(SUI_CLOCK_OBJECT_ID).await?)?,
+        ];
+
+        ptb.programmable_move_call(
+            ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
+            Identifier::new("pool")?,
+            Identifier::new("set_ewma_params")?,
+            vec![base_coin_tag, quote_coin_tag],
+            arguments,
+        );
+
+        Ok(())
+    }
+
+    /// Enable or disable EWMA state for a pool
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param pool_key - The key to identify the pool
+    /// @param enable - Whether to enable or disable EWMA state
+    pub async fn enable_ewma_state(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        pool_key: &str,
+        enable: bool,
+    ) -> Result<()> {
+        let pool = self.config.get_pool(pool_key)?;
+        let base_coin = self.config.get_coin(&pool.base_coin)?;
+        let quote_coin = self.config.get_coin(&pool.quote_coin)?;
+
+        let base_coin_tag = TypeTag::from_str(&base_coin.type_name)?;
+        let quote_coin_tag = TypeTag::from_str(&quote_coin.type_name)?;
+
+        let pool_id = ObjectID::from_hex_literal(&pool.address)?;
+        let admin_cap = ObjectID::from_hex_literal(&self.admin_cap()?)?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(pool_id).await?)?,
+            ptb.obj(self.client.share_object(admin_cap).await?)?,
+            ptb.pure(enable)?,
+            ptb.obj(self.client.share_object(SUI_CLOCK_OBJECT_ID).await?)?,
+        ];
+
+        ptb.programmable_move_call(
+            ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
+            Identifier::new("pool")?,
+            Identifier::new("enable_ewma_state")?,
             vec![base_coin_tag, quote_coin_tag],
             arguments,
         );

@@ -3,7 +3,7 @@ use lazy_static;
 use std::collections::HashMap;
 
 pub const TESTNET_PACKAGE_IDS: DeepBookPackageIds = DeepBookPackageIds {
-    deepbook_package_id: "0xa3886aaa8aa831572dd39549242ca004a438c3a55967af9f0387ad2b01595068",
+    deepbook_package_id: "0xc483dba510597205749f2e8410c23f19be31a710aef251f353bc1b97755efd4d",
     registry_id: "0x7c256edbda983a2cd6f946655f4bf3f00a41043993781f8674a7046e8c0e11d1",
     deep_treasury_id: "0x69fffdae0075f8f71f4fa793549c11079266910e8905169845af1f5d00e09dcb",
 };

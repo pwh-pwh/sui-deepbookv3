@@ -124,6 +124,14 @@ pub struct CreatePermissionlessPoolParams {
     pub deep_coin: Option<ObjectID>,
 }
 
+/// Parameters for setting EWMA params
+#[derive(Debug, Clone)]
+pub struct SetEwmaParamsParams {
+    pub alpha: f64,
+    pub z_score_threshold: f64,
+    pub additional_taker_fee: f64,
+}
+
 /// Configuration for the DeepBook system
 #[derive(Debug, Clone)]
 pub struct Config {

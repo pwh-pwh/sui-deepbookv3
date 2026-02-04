@@ -434,6 +434,135 @@ impl DeepBookContract {
         ))
     }
 
+    /// Mint a referral for a pool
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param pool_key - The key to identify the pool
+    /// @param multiplier - The multiplier for the referral
+    /// @returns The mint referral call
+    pub async fn mint_referral(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        pool_key: &str,
+        multiplier: f64,
+    ) -> anyhow::Result<Argument> {
+        let pool = self.config.get_pool(pool_key)?;
+        let base_coin = self.config.get_coin(&pool.base_coin)?;
+        let quote_coin = self.config.get_coin(&pool.quote_coin)?;
+
+        let adjusted_multiplier = (multiplier * FLOAT_SCALAR as f64).round() as u64;
+
+        let pool_id = ObjectID::from_hex_literal(&pool.address)?;
+        let base_coin_tag = TypeTag::from_str(&base_coin.type_name)?;
+        let quote_coin_tag = TypeTag::from_str(&quote_coin.type_name)?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(pool_id).await?)?,
+            ptb.pure(adjusted_multiplier)?,
+        ];
+
+        Ok(ptb.programmable_move_call(
+            ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
+            Identifier::new("pool")?,
+            Identifier::new("mint_referral")?,
+            vec![base_coin_tag, quote_coin_tag],
+            arguments,
+        ))
+    }
+
+    /// Update the referral multiplier for a pool
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param pool_key - The key to identify the pool
+    /// @param referral_id - The referral ID to update
+    /// @param multiplier - The new multiplier
+    pub async fn update_referral_multiplier(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        pool_key: &str,
+        referral_id: &str,
+        multiplier: f64,
+    ) -> anyhow::Result<()> {
+        let pool = self.config.get_pool(pool_key)?;
+        let base_coin = self.config.get_coin(&pool.base_coin)?;
+        let quote_coin = self.config.get_coin(&pool.quote_coin)?;
+
+        let adjusted_multiplier = (multiplier * FLOAT_SCALAR as f64).round() as u64;
+
+        let pool_id = ObjectID::from_hex_literal(&pool.address)?;
+        let referral_object = ObjectID::from_hex_literal(referral_id)?;
+
+        let base_coin_tag = TypeTag::from_str(&base_coin.type_name)?;
+        let quote_coin_tag = TypeTag::from_str(&quote_coin.type_name)?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(pool_id).await?)?,
+            ptb.obj(self.client.share_object(referral_object).await?)?,
+            ptb.pure(adjusted_multiplier)?,
+        ];
+
+        ptb.programmable_move_call(
+            ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
+            Identifier::new("pool")?,
+            Identifier::new("update_referral_multiplier")?,
+            vec![base_coin_tag, quote_coin_tag],
+            arguments,
+        );
+
+        Ok(())
+    }
+
+    /// Claim referral rewards for a pool
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param pool_key - The key to identify the pool
+    /// @param referral_id - The referral ID
+    /// @returns The base, quote, and deep rewards
+    pub async fn claim_referral_rewards(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        pool_key: &str,
+        referral_id: &str,
+    ) -> anyhow::Result<(Argument, Argument, Argument)> {
+        let pool = self.config.get_pool(pool_key)?;
+        let base_coin = self.config.get_coin(&pool.base_coin)?;
+        let quote_coin = self.config.get_coin(&pool.quote_coin)?;
+
+        let pool_id = ObjectID::from_hex_literal(&pool.address)?;
+        let referral_object = ObjectID::from_hex_literal(referral_id)?;
+
+        let base_coin_tag = TypeTag::from_str(&base_coin.type_name)?;
+        let quote_coin_tag = TypeTag::from_str(&quote_coin.type_name)?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(pool_id).await?)?,
+            ptb.obj(self.client.share_object(referral_object).await?)?,
+        ];
+
+        let result = ptb.programmable_move_call(
+            ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
+            Identifier::new("pool")?,
+            Identifier::new("claim_referral_rewards")?,
+            vec![base_coin_tag, quote_coin_tag],
+            arguments,
+        );
+
+        let result_index = match result {
+            Argument::Result(index) => index,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Unexpected argument returned from claim_referral_rewards"
+                ))
+            }
+        };
+
+        Ok((
+            Argument::NestedResult(result_index, 0),
+            Argument::NestedResult(result_index, 1),
+            Argument::NestedResult(result_index, 2),
+        ))
+    }
+
     /// Gets an order
     ///
     /// @param ptb - ProgrammableTransactionBuilder instance
@@ -1190,6 +1319,101 @@ impl DeepBookContract {
             ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
             Identifier::new("pool")?,
             Identifier::new("get_order_deep_price")?,
+            vec![base_coin_tag, quote_coin_tag],
+            arguments,
+        ))
+    }
+
+    /// Update the allowed versions for a pool
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param pool_key - The key of the pool to be updated
+    pub async fn update_pool_allowed_versions(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        pool_key: &str,
+    ) -> anyhow::Result<()> {
+        let pool = self.config.get_pool(pool_key)?;
+        let base_coin = self.config.get_coin(&pool.base_coin)?;
+        let quote_coin = self.config.get_coin(&pool.quote_coin)?;
+
+        let base_coin_tag = TypeTag::from_str(&base_coin.type_name)?;
+        let quote_coin_tag = TypeTag::from_str(&quote_coin.type_name)?;
+
+        let pool_id = ObjectID::from_hex_literal(&pool.address)?;
+        let registry_id = ObjectID::from_hex_literal(self.config.registry_id())?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(pool_id).await?)?,
+            ptb.obj(self.client.share_object(registry_id).await?)?,
+        ];
+
+        ptb.programmable_move_call(
+            ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
+            Identifier::new("pool")?,
+            Identifier::new("update_pool_allowed_versions")?,
+            vec![base_coin_tag, quote_coin_tag],
+            arguments,
+        );
+
+        Ok(())
+    }
+
+    /// Get the balance manager IDs for a given owner
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param owner - The owner address to get balance manager IDs for
+    pub async fn get_balance_manager_ids(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        owner: SuiAddress,
+    ) -> anyhow::Result<Argument> {
+        let registry_id = ObjectID::from_hex_literal(self.config.registry_id())?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(registry_id).await?)?,
+            ptb.pure(owner)?,
+        ];
+
+        Ok(ptb.programmable_move_call(
+            ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
+            Identifier::new("registry")?,
+            Identifier::new("get_balance_manager_ids")?,
+            vec![],
+            arguments,
+        ))
+    }
+
+    /// Get the referral balances for a pool and referral
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param pool_key - The key to identify the pool
+    /// @param referral_id - The referral ID
+    pub async fn get_referral_balances(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        pool_key: &str,
+        referral_id: &str,
+    ) -> anyhow::Result<Argument> {
+        let pool = self.config.get_pool(pool_key)?;
+        let base_coin = self.config.get_coin(&pool.base_coin)?;
+        let quote_coin = self.config.get_coin(&pool.quote_coin)?;
+
+        let pool_id = ObjectID::from_hex_literal(&pool.address)?;
+        let referral_object = ObjectID::from_hex_literal(referral_id)?;
+
+        let base_coin_tag = TypeTag::from_str(&base_coin.type_name)?;
+        let quote_coin_tag = TypeTag::from_str(&quote_coin.type_name)?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(pool_id).await?)?,
+            ptb.obj(self.client.share_object(referral_object).await?)?,
+        ];
+
+        Ok(ptb.programmable_move_call(
+            ObjectID::from_hex_literal(self.config.deepbook_package_id())?,
+            Identifier::new("pool")?,
+            Identifier::new("get_referral_balances")?,
             vec![base_coin_tag, quote_coin_tag],
             arguments,
         ))

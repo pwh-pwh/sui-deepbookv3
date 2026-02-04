@@ -98,6 +98,93 @@ impl BalanceManagerContract {
         Ok(())
     }
 
+    /// Create a new BalanceManager with a specified owner
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param owner_address - The address of the owner
+    pub fn create_balance_manager_with_owner(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        owner_address: SuiAddress,
+    ) -> anyhow::Result<Argument> {
+        let package_id = ObjectID::from_hex_literal(self.config.deepbook_package_id())?;
+        let arguments = vec![ptb.pure(owner_address)?];
+
+        Ok(ptb.programmable_move_call(
+            package_id,
+            Identifier::new("balance_manager")?,
+            Identifier::new("new_with_custom_owner")?,
+            vec![],
+            arguments,
+        ))
+    }
+
+    /// Create a new BalanceManager with a specified owner and return the caps
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param owner_address - The address of the owner
+    /// @returns The manager, deposit cap, withdraw cap, and trade cap
+    pub fn create_balance_manager_with_owner_and_caps(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        owner_address: SuiAddress,
+    ) -> anyhow::Result<(Argument, Argument, Argument, Argument)> {
+        let package_id = ObjectID::from_hex_literal(self.config.deepbook_package_id())?;
+        let arguments = vec![ptb.pure(owner_address)?];
+
+        let result = ptb.programmable_move_call(
+            package_id,
+            Identifier::new("balance_manager")?,
+            Identifier::new("new_with_custom_owner_and_caps")?,
+            vec![],
+            arguments,
+        );
+
+        let result_index = match result {
+            Argument::Result(index) => index,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Unexpected argument returned from new_with_custom_owner_and_caps"
+                ))
+            }
+        };
+
+        Ok((
+            Argument::NestedResult(result_index, 0),
+            Argument::NestedResult(result_index, 1),
+            Argument::NestedResult(result_index, 2),
+            Argument::NestedResult(result_index, 3),
+        ))
+    }
+
+    /// Share a BalanceManager
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param manager - The BalanceManager argument to share
+    pub fn share_balance_manager(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        manager: Argument,
+    ) -> anyhow::Result<()> {
+        let manager_tag = TypeTag::from_str(
+            format!(
+                "{}::balance_manager::BalanceManager",
+                self.config.deepbook_package_id()
+            )
+            .as_str(),
+        )?;
+
+        ptb.programmable_move_call(
+            SUI_FRAMEWORK_PACKAGE_ID,
+            Identifier::new("transfer")?,
+            Identifier::new("public_share_object")?,
+            vec![manager_tag],
+            vec![manager],
+        );
+
+        Ok(())
+    }
+
     /// Deposit funds into the BalanceManager
     ///
     /// @param ptb - ProgrammableTransactionBuilder instance
@@ -494,6 +581,114 @@ impl BalanceManagerContract {
         Ok(())
     }
 
+    /// Set the referral for the BalanceManager
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param manager_key - The key to identify the BalanceManager
+    /// @param referral_id - The referral ID to set
+    /// @param trade_cap - The trade cap for permission checking
+    pub async fn set_referral(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        manager_key: &str,
+        referral_id: &str,
+        trade_cap: Argument,
+    ) -> anyhow::Result<()> {
+        let manager_address = self
+            .config
+            .get_balance_manager(manager_key)?
+            .address
+            .as_str();
+        let manager_id = ObjectID::from_hex_literal(manager_address)?;
+        let referral_object = ObjectID::from_hex_literal(referral_id)?;
+        let package_id = ObjectID::from_hex_literal(self.config.deepbook_package_id())?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object_mutable(manager_id).await?)?,
+            ptb.obj(self.client.share_object(referral_object).await?)?,
+            trade_cap,
+        ];
+
+        ptb.programmable_move_call(
+            package_id,
+            Identifier::new("balance_manager")?,
+            Identifier::new("set_referral")?,
+            vec![],
+            arguments,
+        );
+
+        Ok(())
+    }
+
+    /// Unset the referral for the BalanceManager
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param manager_key - The key to identify the BalanceManager
+    /// @param trade_cap - The trade cap for permission checking
+    pub async fn unset_referral(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        manager_key: &str,
+        trade_cap: Argument,
+    ) -> anyhow::Result<()> {
+        let manager_address = self
+            .config
+            .get_balance_manager(manager_key)?
+            .address
+            .as_str();
+        let manager_id = ObjectID::from_hex_literal(manager_address)?;
+        let package_id = ObjectID::from_hex_literal(self.config.deepbook_package_id())?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object_mutable(manager_id).await?)?,
+            trade_cap,
+        ];
+
+        ptb.programmable_move_call(
+            package_id,
+            Identifier::new("balance_manager")?,
+            Identifier::new("unset_referral")?,
+            vec![],
+            arguments,
+        );
+
+        Ok(())
+    }
+
+    /// Register the BalanceManager in the registry
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param manager_key - The key to identify the BalanceManager
+    pub async fn register_manager(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        manager_key: &str,
+    ) -> anyhow::Result<()> {
+        let manager_address = self
+            .config
+            .get_balance_manager(manager_key)?
+            .address
+            .as_str();
+        let manager_id = ObjectID::from_hex_literal(manager_address)?;
+        let registry_id = ObjectID::from_hex_literal(self.config.registry_id())?;
+        let package_id = ObjectID::from_hex_literal(self.config.deepbook_package_id())?;
+
+        let arguments = vec![
+            ptb.obj(self.client.share_object(manager_id).await?)?,
+            ptb.obj(self.client.share_object(registry_id).await?)?,
+        ];
+
+        ptb.programmable_move_call(
+            package_id,
+            Identifier::new("balance_manager")?,
+            Identifier::new("register_manager")?,
+            vec![],
+            arguments,
+        );
+
+        Ok(())
+    }
+
     /// Get the owner of the BalanceManager
     ///
     /// @param ptb - ProgrammableTransactionBuilder instance
@@ -541,6 +736,27 @@ impl BalanceManagerContract {
             package_id,
             Identifier::new("balance_manager")?,
             Identifier::new("id")?,
+            vec![],
+            arguments,
+        ))
+    }
+
+    /// Get the owner of a referral
+    ///
+    /// @param ptb - ProgrammableTransactionBuilder instance
+    /// @param referral_id - The ID of the referral
+    pub async fn referral_owner(
+        &self,
+        ptb: &mut ProgrammableTransactionBuilder,
+        referral_id: &str,
+    ) -> anyhow::Result<Argument> {
+        let package_id = ObjectID::from_hex_literal(self.config.deepbook_package_id())?;
+        let referral_object = ObjectID::from_hex_literal(referral_id)?;
+        let arguments = vec![ptb.obj(self.client.share_object(referral_object).await?)?];
+        Ok(ptb.programmable_move_call(
+            package_id,
+            Identifier::new("balance_manager")?,
+            Identifier::new("referral_owner")?,
             vec![],
             arguments,
         ))

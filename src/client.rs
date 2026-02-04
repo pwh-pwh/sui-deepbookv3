@@ -873,6 +873,96 @@ impl DeepBookClient {
         }
     }
 
+    /// Get all balance manager IDs for a given owner
+    ///
+    /// @param owner - The owner address to get balance manager IDs for
+    pub async fn get_balance_manager_ids(
+        &self,
+        owner: SuiAddress,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut ptb = ProgrammableTransactionBuilder::new();
+        self.deep_book
+            .get_balance_manager_ids(&mut ptb, owner)
+            .await?;
+
+        match self.client.dev_inspect_transaction(self.address, ptb).await {
+            Ok(res) => {
+                let res = res
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get first result"))?;
+                let manager_ids = bcs::from_bytes::<Vec<SuiAddress>>(&res.0)?;
+                Ok(manager_ids.into_iter().map(|id| id.to_string()).collect())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Get the owner of a referral
+    ///
+    /// @param referral_id - The referral ID
+    pub async fn referral_owner(&self, referral_id: &str) -> anyhow::Result<String> {
+        let mut ptb = ProgrammableTransactionBuilder::new();
+        self.balance_manager
+            .referral_owner(&mut ptb, referral_id)
+            .await?;
+
+        match self.client.dev_inspect_transaction(self.address, ptb).await {
+            Ok(res) => {
+                let res = res
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get first result"))?;
+                let owner = bcs::from_bytes::<SuiAddress>(&res.0)?;
+                Ok(owner.to_string())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Get referral balances for a pool and referral
+    ///
+    /// @param pool_key - Key of the pool
+    /// @param referral_id - The referral ID
+    pub async fn get_referral_balances(
+        &self,
+        pool_key: &str,
+        referral_id: &str,
+    ) -> anyhow::Result<Balances> {
+        let mut ptb = ProgrammableTransactionBuilder::new();
+        let pool = self.config.get_pool(pool_key)?;
+        let base_scalar = self.config.get_coin(&pool.base_coin)?.scalar;
+        let quote_scalar = self.config.get_coin(&pool.quote_coin)?.scalar;
+
+        self.deep_book
+            .get_referral_balances(&mut ptb, pool_key, referral_id)
+            .await?;
+
+        match self.client.dev_inspect_transaction(self.address, ptb).await {
+            Ok(mut res) => {
+                let base_balance = res
+                    .pop()
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get first result"))?;
+                let base_balance = bcs::from_bytes::<u64>(&base_balance.0)?;
+
+                let quote_balance = res
+                    .pop()
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get first result"))?;
+                let quote_balance = bcs::from_bytes::<u64>(&quote_balance.0)?;
+
+                let deep_balance = res
+                    .pop()
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get first result"))?;
+                let deep_balance = bcs::from_bytes::<u64>(&deep_balance.0)?;
+
+                Ok(Balances {
+                    base: ((base_balance as f64 / base_scalar as f64) * 1e9).round() / 1e9,
+                    quote: ((quote_balance as f64 / quote_scalar as f64) * 1e9).round() / 1e9,
+                    deep: ((deep_balance as f64 / DEEP_SCALAR as f64) * 1e9).round() / 1e9,
+                })
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     async fn get_quote_quantity_out_inner(
         &self,
         ptb: ProgrammableTransactionBuilder,
